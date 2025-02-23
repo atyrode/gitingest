@@ -67,77 +67,229 @@ graph TD
 
 1. Initialize new Vite project with React + TypeScript
    ```bash
-   npm create vite@latest gitingest-frontend -- --template react-ts
+   mkdir frontend
+   cd frontend
+   npm create vite@latest . --template react-ts
    ```
 
-2. Configure TailwindCSS
+2. Install Required Dependencies
    ```bash
-   npm install tailwindcss @tailwindcss/vite
+   # Core dependencies
+   npm install react-router-dom @tanstack/react-query
+
+   # TypeScript types
+   npm install --save-dev @types/node @types/react-router-dom
+
+   # TailwindCSS and plugins
+   npm install --save-dev tailwindcss postcss autoprefixer @tailwindcss/forms @tailwindcss/typography
    ```
 
-   Add the Tailwind plugin to your Vite configuration:
+3. Configure TailwindCSS
+   ```bash
+   # Initialize Tailwind and PostCSS configs
+   npx tailwindcss init -p
+   ```
+
+   Update tailwind.config.js:
+   ```typescript
+   /** @type {import('tailwindcss').Config} */
+   export default {
+     content: [
+       "./index.html",
+       "./src/**/*.{js,ts,jsx,tsx}",
+     ],
+     theme: {
+       extend: {},
+     },
+     plugins: [
+       require('@tailwindcss/forms'),
+       require('@tailwindcss/typography'),
+     ],
+   }
+   ```
+
+   Update src/index.css with Tailwind directives:
+   ```css
+   @tailwind base;
+   @tailwind components;
+   @tailwind utilities;
+
+   @layer base {
+     html {
+       @apply antialiased;
+     }
+     body {
+       @apply bg-white text-gray-900 min-h-screen;
+     }
+   }
+   ```
+
+4. Configure Vite
    ```typescript
    // vite.config.ts
    import { defineConfig } from 'vite'
-   import tailwindcss from '@tailwindcss/vite'
+   import react from '@vitejs/plugin-react'
 
    export default defineConfig({
-     plugins: [
-       tailwindcss(),
-     ],
+     plugins: [react()],
+     server: {
+       port: 3000,
+       proxy: {
+         '/api': {
+           target: 'http://localhost:8000',
+           changeOrigin: true,
+         },
+       },
+     },
+     build: {
+       target: 'esnext',
+       minify: 'esbuild',
+       rollupOptions: {
+         output: {
+           manualChunks: {
+             'react-vendor': ['react', 'react-dom'],
+           },
+         },
+       },
+     },
    })
    ```
 
-   Add Tailwind CSS import to your main CSS file:
-   ```css
-   @import "tailwindcss";
-   ```
-
-3. Set up project structure:
+5. Set up Project Structure
    ```
    src/
    ├── components/
-   │   ├── navbar/
-   │   ├── git-form/
-   │   └── results/
+   │   └── ErrorBoundary.tsx
+   ├── providers/
+   │   └── AppProviders.tsx
    ├── hooks/
    ├── types/
    ├── utils/
    └── api/
    ```
 
-4. Configure Error Boundaries:
+6. Implement Core Provider Setup
    ```typescript
-   // components/ErrorBoundary.tsx
-   interface ErrorBoundaryProps {
-     children: React.ReactNode;
-     fallback: React.ReactNode;
+   // src/providers/AppProviders.tsx
+   import { ReactNode } from 'react'
+   import { BrowserRouter as Router } from 'react-router-dom'
+   import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+   interface AppProvidersProps {
+     children: ReactNode
+     queryClient: QueryClient
    }
-   
-   interface ErrorBoundaryState {
-     hasError: boolean;
-     error: Error | null;
+
+   export function AppProviders({ children, queryClient }: AppProvidersProps) {
+     return (
+       <QueryClientProvider client={queryClient}>
+         <Router>{children}</Router>
+       </QueryClientProvider>
+     )
    }
    ```
 
-5. Set up Analytics:
+7. Configure Error Boundaries
    ```typescript
-   // hooks/useAnalytics.ts
-   export const useAnalytics = () => {
-     useEffect(() => {
-       window.posthog.init('phc_9aNpiIVH2zfTWeY84vdTWxvrJRCQQhP5kcVDXUvcdou', {
-         api_host: 'https://eu.i.posthog.com',
-         person_profiles: 'always',
-       });
-     }, []);
-   
-     const trackEvent = (name: string, properties?: Record<string, any>) => {
-       window.posthog?.capture(name, properties);
-     };
-   
-     return { trackEvent };
-   };
+   // src/components/ErrorBoundary.tsx
+   import { Component, ErrorInfo, ReactNode } from 'react'
+
+   interface Props {
+     children: ReactNode
+     fallback: ReactNode
+   }
+
+   interface State {
+     hasError: boolean
+     error: Error | null
+   }
+
+   class ErrorBoundary extends Component<Props, State> {
+     public state: State = {
+       hasError: false,
+       error: null,
+     }
+
+     public static getDerivedStateFromError(error: Error): State {
+       return {
+         hasError: true,
+         error,
+       }
+     }
+
+     public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+       console.error('Uncaught error:', error, errorInfo)
+     }
+
+     public render() {
+       if (this.state.hasError) {
+         return this.props.fallback
+       }
+
+       return this.props.children
+     }
+   }
+
+   export default ErrorBoundary
    ```
+
+8. Set up React Query Client
+   ```typescript
+   // src/main.tsx
+   import { QueryClient } from '@tanstack/react-query'
+   import React from 'react'
+   import ReactDOM from 'react-dom/client'
+   import App from './App'
+   import './index.css'
+   import { AppProviders } from './providers/AppProviders'
+
+   const queryClient = new QueryClient({
+     defaultOptions: {
+       queries: {
+         staleTime: 5 * 60 * 1000, // 5 minutes
+         gcTime: 30 * 60 * 1000, // 30 minutes
+         retry: (failureCount: number, error: unknown) => {
+           if (error instanceof Error && error.name === 'RateLimitError') {
+             return false
+           }
+           return failureCount < 3
+         },
+       },
+     },
+   })
+
+   ReactDOM.createRoot(document.getElementById('root')!).render(
+     <React.StrictMode>
+       <AppProviders queryClient={queryClient}>
+         <App />
+       </AppProviders>
+     </React.StrictMode>
+   )
+   ```
+
+9. Implement Basic App Component
+   ```typescript
+   // src/App.tsx
+   import { Route, Routes } from 'react-router-dom'
+   import ErrorBoundary from './components/ErrorBoundary'
+   import { usePageTracking } from './hooks/usePageTracking'
+
+   function App() {
+     usePageTracking()
+
+     return (
+       <ErrorBoundary fallback={<ErrorFallback />}>
+         <Routes>
+           <Route path="/" element={<MainContent />} />
+         </Routes>
+       </ErrorBoundary>
+     )
+   }
+
+   export default App
+   ```
+
+Note: Analytics setup (PostHog) should be deferred until Phase 4 when we implement performance monitoring and tracking. This ensures we have a clear analytics strategy and proper environment variable configuration in place.
 
 ### Phase 2: Component Migration
 
