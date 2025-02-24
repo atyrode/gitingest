@@ -30,6 +30,11 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_exception_handler)
 static_dir = Path(__file__).parent.parent / "static"
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# Mount Next.js static files
+frontend_dir = Path(__file__).parent.parent / "frontend" / "out"
+app.mount("/_next", StaticFiles(directory=frontend_dir / "_next"), name="next_static")
+app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
 
 # Fetch allowed hosts from the environment or use the default values
 allowed_hosts = os.getenv("ALLOWED_HOSTS")
@@ -37,7 +42,7 @@ if allowed_hosts:
     allowed_hosts = allowed_hosts.split(",")
 else:
     # Define the default allowed hosts for the application
-    default_allowed_hosts = ["gitingest.com", "*.gitingest.com", "localhost", "127.0.0.1"]
+    default_allowed_hosts = ["51.159.148.164", "gitingest.com", "*.gitingest.com", "localhost", "127.0.0.1"]
     allowed_hosts = default_allowed_hosts
 
 # Add middleware to enforce allowed hosts
